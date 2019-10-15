@@ -35,13 +35,25 @@ import (
 )
 
 func importReposFromModules(args language.ImportReposArgs) language.ImportReposResult {
-	// Copy go.mod to temporary directory. We may run commands that modify it,
-	// and we want to leave the original alone.
-	tempDir, err := copyGoModToTemp(args.Path)
+	// Copy all go.mod files to a temporary directory. We may run commands that modify them,
+	// and want to leave the originals alone. All go.mod files are copied to account for
+	// relative replace directives in the initial one.
+	tempDir, err := copyGoModsToTemp(args.Config.RepoRoot)
 	if err != nil {
 		return language.ImportReposResult{Error: err}
 	}
 	defer os.RemoveAll(tempDir)
+
+	modAbsPath, err := filepath.Abs(args.Path)
+	if err != nil {
+		return language.ImportReposResult{Error: err}
+	}
+	// Path to go.mod file relative to args.Config.RepoRoot
+	modRepoPath, err := filepath.Rel(args.Config.RepoRoot, modAbsPath)
+	if err != nil {
+		return language.ImportReposResult{Error: err}
+	}
+	modRepoDir, _ := filepath.Split(modRepoPath)
 
 	// List all modules except for the main module, including implicit indirect
 	// dependencies.
@@ -54,7 +66,7 @@ func importReposFromModules(args language.ImportReposArgs) language.ImportReposR
 	}
 	// path@version can be used as a unique identifier for looking up sums
 	pathToModule := map[string]*module{}
-	data, err := goListModules(tempDir)
+	data, err := goListModules(filepath.Join(tempDir, modRepoDir))
 	if err != nil {
 		return language.ImportReposResult{Error: err}
 	}
@@ -69,8 +81,8 @@ func importReposFromModules(args language.ImportReposArgs) language.ImportReposR
 		}
 		if mod.Replace != nil {
 			if filepath.IsAbs(mod.Replace.Path) || build.IsLocalImport(mod.Replace.Path) {
-				log.Printf("go_repository does not support file path replacements for %s -> %s", mod.Path,
-					mod.Replace.Path)
+				log.Printf("warning: skipping filepath replace directive %s -> %s (modify importpath with the #gazelle:prefix directive instead)",
+					mod.Path, mod.Replace.Path)
 				continue
 			}
 			pathToModule[mod.Replace.Path+"@"+mod.Replace.Version] = mod
@@ -195,6 +207,73 @@ func copyGoModToTemp(filename string) (tempDir string, err error) {
 		return "", err
 	}
 	return tempDir, err
+}
+
+// copyGoModsToTemp copies all go.mod files in the repo to a temporary directory.
+// go list tends to mutate go.mod files, but gazelle shouldn't do that.
+func copyGoModsToTemp(repoRoot string) (tempDir string, err error) {
+	modFiles, err := findAllModules(repoRoot)
+	if err != nil {
+		return "", err
+	}
+
+	tempDir, err = ioutil.TempDir("", "gazelle-temp-gomod")
+	if err != nil {
+		return "", err
+	}
+
+	for _, path := range modFiles {
+		dir, _ := filepath.Split(path)
+		if err := os.MkdirAll(filepath.Join(tempDir, dir), 0755); err != nil {
+			return "", err
+		}
+
+		goModOrig, err := os.Open(filepath.Join(repoRoot, path))
+		if err != nil {
+			return "", err
+		}
+
+		goModCopy, err := os.Create(filepath.Join(tempDir, path))
+		if err != nil {
+			return "", err
+		}
+		defer func() {
+			if cerr := goModCopy.Close(); err == nil && cerr != nil {
+				err = cerr
+			}
+		}()
+
+		_, err = io.Copy(goModCopy, goModOrig)
+		if err != nil {
+			os.RemoveAll(tempDir)
+			return "", err
+		}
+	}
+
+	return tempDir, err
+}
+
+// findAllModules returns the path of every go.mod file in the repo
+// relative to repoRoot
+func findAllModules(repoRoot string) ([]string, error) {
+	paths := []string{}
+	err := filepath.Walk(repoRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.Name() == "go.mod" {
+			relPath, err := filepath.Rel(repoRoot, path)
+			if err != nil {
+				return err
+			}
+			paths = append(paths, relPath)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return paths, nil
 }
 
 // findGoTool attempts to locate the go executable. If GOROOT is set, we'll

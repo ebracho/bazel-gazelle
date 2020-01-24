@@ -79,6 +79,11 @@ const (
 	// file with a similar name.
 	DefaultMode Mode = iota
 
+	// DefaultDisableKnownImportsMode behaves the same as DefaultMode except that
+	// it prevents the use of special cases in dependency resolution for well known
+	// types and Google APIs.
+	DefaultDisableKnownImportsMode
+
 	// DisableMode ignores .proto files and generates empty proto_library rules.
 	// Checked-in generated files (e.g., .pb.go files) should be treated as
 	// normal sources.
@@ -102,6 +107,8 @@ func ModeFromString(s string) (Mode, error) {
 	switch s {
 	case "default":
 		return DefaultMode, nil
+	case "default_disable_known_imports":
+		return DefaultDisableKnownImportsMode, nil
 	case "disable":
 		return DisableMode, nil
 	case "disable_global":
@@ -119,6 +126,8 @@ func (m Mode) String() string {
 	switch m {
 	case DefaultMode:
 		return "default"
+	case DefaultDisableKnownImportsMode:
+		return "default_disable_known_imports"
 	case DisableMode:
 		return "disable"
 	case DisableGlobalMode:
@@ -152,7 +161,7 @@ func (m Mode) ShouldIncludePregeneratedFiles() bool {
 }
 
 func (m Mode) ShouldUseKnownImports() bool {
-	return m != DisableGlobalMode
+	return m != DisableGlobalMode && m != DefaultDisableKnownImportsMode
 }
 
 type modeFlag struct {

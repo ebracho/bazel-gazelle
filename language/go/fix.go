@@ -187,7 +187,7 @@ func flattenSrcs(c *config.Config, f *rule.File) {
 // are not migrated.
 func removeLegacyProto(c *config.Config, f *rule.File) {
 	// Don't fix if the proto mode was set to something other than the default.
-	if pcMode := getProtoMode(c); pcMode != proto.DefaultMode {
+	if pcMode := getProtoMode(c); pcMode != proto.DefaultMode && pcMode != proto.DefaultDisableKnownImportsMode {
 		return
 	}
 

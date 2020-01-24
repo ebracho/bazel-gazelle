@@ -115,7 +115,7 @@ func buildPackages(pc *ProtoConfig, dir, rel string, protoFiles, genFiles []stri
 	}
 
 	switch pc.Mode {
-	case DefaultMode:
+	case DefaultMode, DefaultDisableKnownImportsMode:
 		pkg, err := selectPackage(dir, rel, packageMap)
 		if err != nil {
 			log.Print(err)
@@ -190,7 +190,7 @@ func goPackageName(pkg *Package) string {
 // be empty if there are no sources.
 func generateProto(pc *ProtoConfig, rel string, pkg *Package, shouldSetVisibility bool) *rule.Rule {
 	var name string
-	if pc.Mode == DefaultMode {
+	if pc.Mode == DefaultMode || pc.Mode == DefaultDisableKnownImportsMode {
 		name = RuleName(goPackageName(pkg), pc.GoPrefix, rel)
 	} else {
 		name = RuleName(pkg.Options[pc.groupOption], pkg.Name, rel)
